@@ -1,0 +1,980 @@
+
+rm(list=ls(all=TRUE))
+library(lme4)
+
+mymean <- function(x, n=2, ...){round(mean(x, na.rm=T), n)}
+mysd <- function(x, n=2, ...){round(sd(x, na.rm=T), n)}
+
+#Wie bei Celina: Wer bei V6 noch dabei war, ist "no_dropout" anstelle des angegebenen Dropout-Grundes.
+
+#Celinas Datensatz nehmen dafür:
+cosy1 <- read.csv2("S:\\AG_Holle\\Masterarbeiten\\Masterarbeit_Fahrenberg\\Daten\\cosy_fahrenberg_new.csv")
+table(cosy1$dropout_reason_name)
+
+dim(cosy1) #2741 Leute ("a) Entire study population")
+cosy1$age_group <- cut(cosy1$AGE_V1, c(0,54,64,74,100))
+cosy1$smoking_v1 <- ifelse(cosy1$SMOKER_V1==2, "current", ifelse(cosy1$SMOKER_V1==1, "former", "never"))
+table(cosy1$smoking_v1)
+cosy1$GOLD_GLI_V1 <- NA
+cosy1[!is.na(cosy1$FEV1_GLI_V1) & cosy1$FEV1_GLI_V1>=80,]$GOLD_GLI_V1 <- 1
+cosy1[!is.na(cosy1$FEV1_GLI_V1) & cosy1$FEV1_GLI_V1<80 & cosy1$FEV1_GLI_V1>=50,]$GOLD_GLI_V1 <- 2
+cosy1[!is.na(cosy1$FEV1_GLI_V1) & cosy1$FEV1_GLI_V1<50 & cosy1$FEV1_GLI_V1>=30,]$GOLD_GLI_V1 <- 3
+cosy1[!is.na(cosy1$FEV1_GLI_V1) & cosy1$FEV1_GLI_V1<30,]$GOLD_GLI_V1 <- 4
+table(cosy1$GOLD_GLI_V1, exclude=NULL)
+prop.table(table(cosy1$GOLD_GLI_V1))
+
+cosy1$GOLD_GLI_V2 <- NA
+cosy1[!is.na(cosy1$FEV1_GLI_V2) & cosy1$FEV1_GLI_V2>=80,]$GOLD_GLI_V2 <- 1
+cosy1[!is.na(cosy1$FEV1_GLI_V2) & cosy1$FEV1_GLI_V2<80 & cosy1$FEV1_GLI_V2>=50,]$GOLD_GLI_V2 <- 2
+cosy1[!is.na(cosy1$FEV1_GLI_V2) & cosy1$FEV1_GLI_V2<50 & cosy1$FEV1_GLI_V2>=30,]$GOLD_GLI_V2 <- 3
+cosy1[!is.na(cosy1$FEV1_GLI_V2) & cosy1$FEV1_GLI_V2<30,]$GOLD_GLI_V2 <- 4
+table(cosy1$GOLD_GLI_V2, exclude=NULL)
+prop.table(table(cosy1$GOLD_GLI_V2))
+
+#TIFF_V1 und V2 dazumergen:
+Tiffeneau <- haven::read_sas("S:\\AG_Holle\\PerMed-COPD\\3_Datenmanagement\\3_2_Projektanträge\\PA_Holle\\B_basis_a.sas7bdat")[,c("SUBJECT","TIFF_V1","TIFF_V2")]
+colnames(Tiffeneau)[1] <- "subject"
+cosy1 <- merge(cosy1, Tiffeneau, by="subject")
+
+#FEV1 in ml dazumergen:
+FEV <- read.csv2(
+  "S:\\AG_Holle\\PerMed-COPD\\3_Datenmanagement\\3_2_Projektanträge\\PA_Holle\\J_holle_add_14032023_.csv")
+colnames(FEV)[1] <- "subject"
+cosy1 <- merge(cosy1,
+  FEV[,c("subject","LUFU_FEV1_V1","LUFU_FEV1_V2","LUFU_FEV1_V3","LUFU_FEV1_V4", "LUFU_FEV1_V5","LUFU_FEV1_V6")], by="subject")
+  
+#SGRQ, CAT und MMRC dazumergen:
+Basis <- haven::read_sas("S:\\AG_Holle\\PerMed-COPD\\3_Datenmanagement\\3_2_Projektanträge\\PA_Holle\\B_basis_a.sas7bdat") #MMRC = ATEM_V1_2_MRC_V1
+class(Basis) <- "data.frame"
+colnames(Basis)[3] <- "subject"
+cosy1 <- merge(cosy1, Basis[,c("subject","SGRQ_TOTAL_V1","CAT_V1","ATEM_V1_2_MRC_V1")], by="subject")
+
+
+cosy3 <- cosy1[!is.na(cosy1$FEV1_GLI_V1) & !is.na(cosy1$FEV1_GLI_V3),]
+dim(cosy3) #2017 Leute ("c) Like b), but only those who attended at least visits 1 and 3")
+
+##### mit cosy3 arbeiten! #### (s. Mail 18.9.25 u.a.)
+
+################################
+##### Zahlen für Figure 1: #####
+
+dim(cosy1[!is.na(cosy1$FEV1_GLI_V1),])
+dim(cosy1[!is.na(cosy1$FEV1_GLI_V1) & !is.na(cosy1$FEV1_GLI_V2),])
+dim(cosy1[!is.na(cosy1$FEV1_GLI_V1) & !is.na(cosy1$FEV1_GLI_V3),])
+dim(cosy1[!is.na(cosy1$FEV1_GLI_V1) & !is.na(cosy1$FEV1_GLI_V4),])
+dim(cosy1[!is.na(cosy1$FEV1_GLI_V1) & !is.na(cosy1$FEV1_GLI_V5),])
+dim(cosy1[!is.na(cosy1$FEV1_GLI_V1) & !is.na(cosy1$FEV1_GLI_V6),])
+
+dim(cosy1[!is.na(cosy1$FEV1_GLI_V1) & !is.na(cosy1$TIFF_V1) & cosy1$TIFF_V1>0.7,])
+dim(cosy1[!is.na(cosy1$FEV1_GLI_V1) & !is.na(cosy1$FEV1_GLI_V2) & !is.na(cosy1$TIFF_V1) & cosy1$TIFF_V1>0.7,])
+dim(cosy1[!is.na(cosy1$FEV1_GLI_V1) & !is.na(cosy1$FEV1_GLI_V3) & !is.na(cosy1$TIFF_V1) & cosy1$TIFF_V1>0.7,])
+dim(cosy1[!is.na(cosy1$FEV1_GLI_V1) & !is.na(cosy1$FEV1_GLI_V4) & !is.na(cosy1$TIFF_V1) & cosy1$TIFF_V1>0.7,])
+dim(cosy1[!is.na(cosy1$FEV1_GLI_V1) & !is.na(cosy1$FEV1_GLI_V5) & !is.na(cosy1$TIFF_V1) & cosy1$TIFF_V1>0.7,])
+dim(cosy1[!is.na(cosy1$FEV1_GLI_V1) & !is.na(cosy1$FEV1_GLI_V6) & !is.na(cosy1$TIFF_V1) & cosy1$TIFF_V1>0.7,])
+
+dim(cosy1[!is.na(cosy1$FEV1_GLI_V1) & !is.na(cosy1$TIFF_V1) & cosy1$TIFF_V1<=0.7,])
+dim(cosy1[!is.na(cosy1$FEV1_GLI_V1) & !is.na(cosy1$FEV1_GLI_V2) & !is.na(cosy1$TIFF_V1) & cosy1$TIFF_V1<=0.7,])
+dim(cosy1[!is.na(cosy1$FEV1_GLI_V1) & !is.na(cosy1$FEV1_GLI_V3) & !is.na(cosy1$TIFF_V1) & cosy1$TIFF_V1<=0.7,])
+dim(cosy1[!is.na(cosy1$FEV1_GLI_V1) & !is.na(cosy1$FEV1_GLI_V4) & !is.na(cosy1$TIFF_V1) & cosy1$TIFF_V1<=0.7,])
+dim(cosy1[!is.na(cosy1$FEV1_GLI_V1) & !is.na(cosy1$FEV1_GLI_V5) & !is.na(cosy1$TIFF_V1) & cosy1$TIFF_V1<=0.7,])
+dim(cosy1[!is.na(cosy1$FEV1_GLI_V1) & !is.na(cosy1$FEV1_GLI_V6) & !is.na(cosy1$TIFF_V1) & cosy1$TIFF_V1<=0.7,])
+
+
+
+cosy3$DATUM_V1 <- as.Date(cosy3$DATUM_V1)
+cosy3$DATUM_V2 <- as.Date(cosy3$DATUM_V2)
+cosy3$DATUM_V3 <- as.Date(cosy3$DATUM_V3)
+cosy3$DATUM_V4 <- as.Date(cosy3$DATUM_V4)
+cosy3$DATUM_V5 <- as.Date(cosy3$DATUM_V5)
+cosy3$DATUM_V6 <- as.Date(cosy3$DATUM_V6)
+
+###########
+# Table 1:
+
+dim(cosy1) #2701
+dim(cosy3) #2017
+mydata <- list(cosy1, cosy3)
+table(cosy3$age_group)
+lapply(lapply(mydata, `[`, "age_group"), table)
+lapply(lapply(mydata, `[`, "SEX"), table)
+lapply(lapply(mydata, `[`, "SMOKER_V1"), table)
+lapply(lapply(mydata, `[`, "GOLD_GLI_V1"), table)
+lapply(lapply(mydata, `[`, "EXA_V1"), table)
+
+# Vorbereitung für Table 2:
+lufu_random_slopes <- function(data, FUN=summary){
+ dat_long <- tidyr::pivot_longer(data, cols=c("FEV1_GLI_V1","FEV1_GLI_V3","FEV1_GLI_V4","FEV1_GLI_V5","FEV1_GLI_V6"), names_to="FEV1_GLI")
+ class(dat_long) <- "data.frame"
+ colnames(dat_long)[colnames(dat_long)=="value"] <- "FEV1"
+ dat_long$visit <- as.numeric(substr(dat_long$FEV1_GLI, 11, 11))
+
+ dat_long$time3 <- NA
+ dat_long[dat_long$visit==1,]$time3 <- 0
+ #dat_long[dat_long$visit==2,]$time3 <- 6
+ dat_long[dat_long$visit==3,]$time3 <- (dat_long[dat_long$visit==3,]$DATUM_V3 - dat_long[dat_long$visit==3,]$DATUM_V1) / 365.25
+ dat_long[dat_long$visit==4,]$time3 <- (dat_long[dat_long$visit==4,]$DATUM_V4 - dat_long[dat_long$visit==4,]$DATUM_V1) / 365.25
+ dat_long[dat_long$visit==5,]$time3 <- (dat_long[dat_long$visit==5,]$DATUM_V5 - dat_long[dat_long$visit==5,]$DATUM_V1) / 365.25
+ dat_long[dat_long$visit==6,]$time3 <- (dat_long[dat_long$visit==6,]$DATUM_V6 - dat_long[dat_long$visit==6,]$DATUM_V1) / 365.25
+
+ dat_long <- dat_long[complete.cases(dat_long$FEV1),]
+ dat_long <<- dat_long[,c("FEV1","time3","subject")] #beschränken auf relevante Variablen
+ lmer_random_slope <<- lmer(FEV1 ~ time3 + (1+time3|subject)# + dropout_reason_name
+ , data=dat_long, control = lmerControl(optimizer ="Nelder_Mead"))
+ ann_declines <<- fixef(lmer_random_slope)[2] + ranef(lmer_random_slope)$subject[,2]
+ IDs <<- rownames(ranef(lmer_random_slope)$subject)
+ intercept <<- fixef(lmer_random_slope)[1]
+ slope <<- FUN(fixef(lmer_random_slope)[2] + ranef(lmer_random_slope)$subject[,2])["Mean"]
+ FUN(fixef(lmer_random_slope)[2] + ranef(lmer_random_slope)$subject[,2])
+}
+
+#Auch noch Vorbereitung für Table 2:
+lufu_random_slopes_ml <- function(data, FUN=summary){
+ dat_long <- tidyr::pivot_longer(data, cols=c("LUFU_FEV1_V1","LUFU_FEV1_V3","LUFU_FEV1_V4","LUFU_FEV1_V5","LUFU_FEV1_V6"), names_to="FEV1_GLI")
+ class(dat_long) <- "data.frame"
+ colnames(dat_long)[colnames(dat_long)=="value"] <- "FEV1"
+ dat_long$visit <- as.numeric(substr(dat_long$FEV1_GLI, 12, 12))
+
+ dat_long$time3 <- NA
+ dat_long[dat_long$visit==1,]$time3 <- 0
+ #dat_long[dat_long$visit==2,]$time3 <- 6
+ dat_long[dat_long$visit==3,]$time3 <- (dat_long[dat_long$visit==3,]$DATUM_V3 - dat_long[dat_long$visit==3,]$DATUM_V1) / 365.25
+ dat_long[dat_long$visit==4,]$time3 <- (dat_long[dat_long$visit==4,]$DATUM_V4 - dat_long[dat_long$visit==4,]$DATUM_V1) / 365.25
+ dat_long[dat_long$visit==5,]$time3 <- (dat_long[dat_long$visit==5,]$DATUM_V5 - dat_long[dat_long$visit==5,]$DATUM_V1) / 365.25
+ dat_long[dat_long$visit==6,]$time3 <- (dat_long[dat_long$visit==6,]$DATUM_V6 - dat_long[dat_long$visit==6,]$DATUM_V1) / 365.25
+
+ dat_long <- dat_long[complete.cases(dat_long$FEV1),]
+ dat_long <<- dat_long[,c("FEV1","time3","subject")] #beschränken auf relevante Variablen
+ lmer_random_slope <- lmer(FEV1 ~ time3 + (1+time3|subject)# + dropout_reason_name
+ , data=dat_long, control = lmerControl(optimizer ="Nelder_Mead"))
+ ann_declines <<- fixef(lmer_random_slope)[2] + ranef(lmer_random_slope)$subject[,2]
+ IDs <<- rownames(ranef(lmer_random_slope)$subject)
+ intercept <<- fixef(lmer_random_slope)[1]
+ slope <<- FUN(fixef(lmer_random_slope)[2] + ranef(lmer_random_slope)$subject[,2])["Mean"]
+ FUN(fixef(lmer_random_slope)[2] + ranef(lmer_random_slope)$subject[,2])*1000
+}
+
+### <Play around>
+lufu_random_slopes(data=cosy3)
+#lufu_random_slopes(data=cosy3, FUN=summary)
+lufu_random_slopes(data=cosy3, FUN=quantile)
+#lufu_random_slopes(data=cosy3, FUN=print)
+backup_ann_declines <- ann_declines #Wird bei späteren Funktionsaufrufen überschrieben
+backup_IDs <- IDs #Wird bei späteren Funktionsaufrufen überschrieben
+DF_IDs_declines <- data.frame(backup_IDs, backup_ann_declines)
+DF_IDs_declines <- cbind(DF_IDs_declines, psych::winsor(DF_IDs_declines$backup_ann_declines, trim=0.05))
+colnames(DF_IDs_declines) <- c("subject", "ann_decline", "ann_decline_winsor05")
+summary(DF_IDs_declines)
+head(DF_IDs_declines)
+#DF_IDs_declines
+nrow(cosy3[!is.na(cosy3$FEV1_GLI_V1),c("subject","FEV1_GLI_V1")])
+merged <- merge(cosy3[!is.na(cosy3$FEV1_GLI_V1),c("subject","FEV1_GLI_V1")], DF_IDs_declines, by="subject")
+merged[,2] <- round(merged[,2],1)
+head(merged, 10)
+### </Play around>
+
+data=cosy3
+FUN=summary
+#(Dann Codes innerhalb der Funktion durchlaufen lassen.)
+setdiff(cosy3$subject, unique(dat_long$subject)) #Keine, gut.
+
+
+#######################################################################
+# Table 2. Estimated annual lung function decline (random slopes model) according to GOLD stage and Tiffeneau index.
+
+
+## obere Hälfte:
+
+lufu_random_slopes(data=cosy3) #an cosy3 anhängen:
+cosy3 <- data.frame(cosy3, lufu_random_slopes(data=cosy3, FUN=print))
+colnames(cosy3)[grepl("lufu_random_slopes", colnames(cosy3))] <- "ann_decline"
+summary(x <- psych::winsor(lufu_random_slopes(data=cosy3[!is.na(cosy3$GOLD_GLI_V2),], FUN=print), trim=0.05)); sd(x)
+summary(x <- psych::winsor(lufu_random_slopes(data=cosy3[!is.na(cosy3$TIFF_V2) & !is.na(cosy3$GOLD_GLI_V2),], FUN=print), trim=0.05)); sd(x)
+dim(cosy3[!is.na(cosy3$TIFF_V2) & cosy3$TIFF_V2<=0.7 & !is.na(cosy3$GOLD_GLI_V2),]) #1646
+
+## Achtung: Für das GOLD-Stadium habe ich jeweils die Stadien bei V2 genommen wg. Rttm. S. Mail Rolf 17.9. ##
+
+cosy3$TIFF_V1_dicho <- factor(ifelse(cosy3$TIFF_V1>0.7, ">0.7", "<=0.7"))
+cosy3$TIFF_V2_dicho <- factor(ifelse(cosy3$TIFF_V2>0.7, ">0.7", "<=0.7"))
+
+
+## Table 2, untere Hälfte (bzw. jetzt komplette Table 2):
+
+# Winsorizing applied to the full distribution of individual slopes). V1-V6 (no V2) 1. GOLD staging according to V2.
+
+cosy3 <- data.frame(cosy3, psych::winsor(lufu_random_slopes(data=cosy3, FUN=print), trim=0.05))
+
+cosy3_ <- cosy3[!is.na(cosy3$TIFF_V2_dicho) & !is.na(cosy3$GOLD_GLI_V2),]
+
+colnames(cosy3_)[grepl("psych..winsor.", colnames(cosy3_))] <- "ann_decline_winsor05"
+summary(x <- psych::winsor(lufu_random_slopes(data=cosy3_, FUN=print), trim=0.05)); mysd(x) #NICHT benötigt, weil ohne TIFF_V1.
+
+#Overall (Tiffeneau reported):
+psych::winsor(lufu_random_slopes(data=cosy3_, FUN=print), trim=0.05); mymean(x); mysd(x)
+
+#Strat. nach Tiffeneau-Index:
+aggregate(ann_decline_winsor05 ~ TIFF_V2_dicho, data=cosy3_, FUN=mymean)
+aggregate(ann_decline_winsor05 ~ TIFF_V2_dicho, data=cosy3_, FUN=mysd)
+aggregate(ann_decline_winsor05 ~ TIFF_V2_dicho, data=cosy3_, FUN = function(x) sum(!is.na(x)))
+
+# #Und nur nach GOLD:
+# aggregate(ann_decline_winsor05 ~ GOLD_GLI_V2, data=cosy3_, FUN=mymean)
+# aggregate(ann_decline_winsor05 ~ GOLD_GLI_V2, data=cosy3_, FUN=mysd)
+# aggregate(ann_decline_winsor05 ~ GOLD_GLI_V2, data=cosy3_, FUN = function(x) sum(!is.na(x)))
+
+#Stratifizieren nach GOLD-Stadium und Tiffeneau-Index:
+aggregate(ann_decline_winsor05 ~ GOLD_GLI_V2 + TIFF_V2_dicho, data = cosy3_, FUN = function(x) sum(!is.na(x)))
+aggregate(ann_decline_winsor05 ~ GOLD_GLI_V2 + TIFF_V2_dicho, data=cosy3_, FUN=mymean)
+aggregate(ann_decline_winsor05 ~ GOLD_GLI_V2 + TIFF_V2_dicho, data=cosy3_, FUN=mysd)
+
+#Dasselbe in ml:
+cosy3_ <- data.frame(cosy3_, psych::winsor(lufu_random_slopes_ml(data=cosy3_, FUN=print), trim=0.05))
+colnames(cosy3_)[grepl("psych..winsor.", colnames(cosy3_))] <- "ann_decline_ml_winsor05"
+mymean(x <- psych::winsor(lufu_random_slopes_ml(data=cosy3_, FUN=print), trim=0.05), n=1); mysd(x) #NICHT benötigt, weil ohne TIFF_V2.
+
+#Overall (Tiffeneau reported):
+psych::winsor(lufu_random_slopes_ml(data=cosy3_[!is.na(cosy3_$TIFF_V2) & !is.na(cosy3_$GOLD_GLI_V2),], FUN=print), trim=0.05); mymean(x, n=1); mysd(x, n=1)
+
+#Strat. nach Tiffeneau-Index:
+aggregate(ann_decline_ml_winsor05 ~ TIFF_V2_dicho, data=cosy3_, FUN=mymean)
+aggregate(ann_decline_ml_winsor05 ~ TIFF_V2_dicho, data=cosy3_, FUN=mysd)
+aggregate(ann_decline_ml_winsor05 ~ TIFF_V2_dicho, data=cosy3_, FUN = function(x) sum(!is.na(x)))
+
+# #Und nur nach GOLD:
+# aggregate(ann_decline_ml_winsor05 ~ GOLD_GLI_V2, data=cosy3_, FUN=mymean)
+# aggregate(ann_decline_ml_winsor05 ~ GOLD_GLI_V2, data=cosy3_, FUN=mysd)
+# aggregate(ann_decline_ml_winsor05 ~ GOLD_GLI_V2, data=cosy3_, FUN = function(x) sum(!is.na(x)))
+
+#Stratifizieren nach GOLD-Stadium und Tiffeneau-Index:
+aggregate(ann_decline_ml_winsor05 ~ GOLD_GLI_V2 + TIFF_V2_dicho, data = cosy3_, FUN = function(x) sum(!is.na(x)))
+aggregate(ann_decline_ml_winsor05 ~ GOLD_GLI_V2 + TIFF_V2_dicho, data=cosy3_, FUN=mymean, n=1)
+aggregate(ann_decline_ml_winsor05 ~ GOLD_GLI_V2 + TIFF_V2_dicho, data=cosy3_, FUN=mysd, n=1)
+
+
+## Table 3: Estimated annual lung function decline by GOLD stage and dropout reason
+
+cosy3_do <- cosy3_[!is.na(cosy3_$dropout_reason_name) & !is.na(cosy3_$GOLD_GLI_V2),]
+
+### Intercept (w/o model) und Mean Slope (w/o model):
+
+g1_cc <- cosy3_do[cosy3_do$dropout_reason_name=="center_closed" & cosy3_do$GOLD_GLI_V2==1,]; lufu_random_slopes(data=g1_cc); (intercept_g1_cc <- intercept); slope_g1_cc <- slope
+g2_cc <- cosy3_do[cosy3_do$dropout_reason_name=="center_closed" & cosy3_do$GOLD_GLI_V2==2,]; lufu_random_slopes(data=g2_cc); (intercept_g2_cc <- intercept); slope_g2_cc <- slope
+g3_cc <- cosy3_do[cosy3_do$dropout_reason_name=="center_closed" & cosy3_do$GOLD_GLI_V2==3,]; lufu_random_slopes(data=g3_cc); (intercept_g3_cc <- intercept); slope_g3_cc <- slope
+g4_cc <- cosy3_do[cosy3_do$dropout_reason_name=="center_closed" & cosy3_do$GOLD_GLI_V2==4,]; lufu_random_slopes(data=g4_cc); (intercept_g4_cc <- intercept); slope_g4_cc <- slope
+
+g1_nd <- cosy3_do[cosy3_do$dropout_reason_name=="no_dropout" & cosy3_do$GOLD_GLI_V2==1,]; lufu_random_slopes(data=g1_nd); (intercept_g1_nd <- intercept); slope_g1_nd <- slope
+g2_nd <- cosy3_do[cosy3_do$dropout_reason_name=="no_dropout" & cosy3_do$GOLD_GLI_V2==2,]; lufu_random_slopes(data=g2_nd); (intercept_g2_nd <- intercept); slope_g2_nd <- slope
+g3_nd <- cosy3_do[cosy3_do$dropout_reason_name=="no_dropout" & cosy3_do$GOLD_GLI_V2==3,]; lufu_random_slopes(data=g3_nd); (intercept_g3_nd <- intercept); slope_g3_nd <- slope
+g4_nd <- cosy3_do[cosy3_do$dropout_reason_name=="no_dropout" & cosy3_do$GOLD_GLI_V2==4,]; lufu_random_slopes(data=g4_nd); (intercept_g4_nd <- intercept); slope_g4_nd <- slope
+
+g1_ni <- cosy3_do[cosy3_do$dropout_reason_name=="unknown__not_interested" & cosy3_do$GOLD_GLI_V2==1,]; lufu_random_slopes(data=g1_ni); (intercept_g1_ni <- intercept); slope_g1_ni <- slope
+g2_ni <- cosy3_do[cosy3_do$dropout_reason_name=="unknown__not_interested" & cosy3_do$GOLD_GLI_V2==2,]; lufu_random_slopes(data=g2_ni); (intercept_g2_ni <- intercept); slope_g2_ni <- slope
+g3_ni <- cosy3_do[cosy3_do$dropout_reason_name=="unknown__not_interested" & cosy3_do$GOLD_GLI_V2==3,]; lufu_random_slopes(data=g3_ni); (intercept_g3_ni <- intercept); slope_g3_ni <- slope
+g4_ni <- cosy3_do[cosy3_do$dropout_reason_name=="unknown__not_interested" & cosy3_do$GOLD_GLI_V2==4,]; lufu_random_slopes(data=g4_ni); (intercept_g4_ni <- intercept); slope_g4_ni <- slope
+
+g1_nr <- cosy3_do[cosy3_do$dropout_reason_name=="not_reached" & cosy3_do$GOLD_GLI_V2==1,]; lufu_random_slopes(data=g1_nr); (intercept_g1_nr <- intercept); slope_g1_nr <- slope
+g2_nr <- cosy3_do[cosy3_do$dropout_reason_name=="not_reached" & cosy3_do$GOLD_GLI_V2==2,]; lufu_random_slopes(data=g2_nr); (intercept_g2_nr <- intercept); slope_g2_nr <- slope
+g3_nr <- cosy3_do[cosy3_do$dropout_reason_name=="not_reached" & cosy3_do$GOLD_GLI_V2==3,]; lufu_random_slopes(data=g3_nr); (intercept_g3_nr <- intercept); slope_g3_nr <- slope
+g4_nr <- cosy3_do[cosy3_do$dropout_reason_name=="not_reached" & cosy3_do$GOLD_GLI_V2==4,]; lufu_random_slopes(data=g4_nr); (intercept_g4_nr <- intercept); slope_g4_nr <- slope
+
+g1_ti <- cosy3_do[cosy3_do$dropout_reason_name=="too_ill" & cosy3_do$GOLD_GLI_V2==1,]; lufu_random_slopes(data=g1_ti); (intercept_g1_ti <- intercept); slope_g1_ti <- slope
+g2_ti <- cosy3_do[cosy3_do$dropout_reason_name=="too_ill" & cosy3_do$GOLD_GLI_V2==2,]; lufu_random_slopes(data=g2_ti); (intercept_g2_ti <- intercept); slope_g2_ti <- slope
+g3_ti <- cosy3_do[cosy3_do$dropout_reason_name=="too_ill" & cosy3_do$GOLD_GLI_V2==3,]; lufu_random_slopes(data=g3_ti); (intercept_g3_ti <- intercept); slope_g3_ti <- slope
+g4_ti <- cosy3_do[cosy3_do$dropout_reason_name=="too_ill" & cosy3_do$GOLD_GLI_V2==4,]; lufu_random_slopes(data=g4_ti); (intercept_g4_ti <- intercept); slope_g4_ti <- slope
+
+g1_di <- cosy3_do[cosy3_do$dropout_reason_name=="died" & cosy3_do$GOLD_GLI_V2==1,]; lufu_random_slopes(data=g1_di); (intercept_g1_di <- intercept); slope_g1_di <- slope
+g2_di <- cosy3_do[cosy3_do$dropout_reason_name=="died" & cosy3_do$GOLD_GLI_V2==2,]; lufu_random_slopes(data=g2_di); (intercept_g2_di <- intercept); slope_g2_di <- slope
+g3_di <- cosy3_do[cosy3_do$dropout_reason_name=="died" & cosy3_do$GOLD_GLI_V2==3,]; lufu_random_slopes(data=g3_di); (intercept_g3_di <- intercept); slope_g3_di <- slope
+g4_di <- cosy3_do[cosy3_do$dropout_reason_name=="died" & cosy3_do$GOLD_GLI_V2==4,]; lufu_random_slopes(data=g4_di); (intercept_g4_di <- intercept); slope_g4_di <- slope
+
+G1 <- cosy3_do[cosy3_do$GOLD_GLI_V2==1,]; lufu_random_slopes(data=G1); (intercept_g1 <- intercept); slope_g1 <- slope
+G2 <- cosy3_do[cosy3_do$GOLD_GLI_V2==2,]; lufu_random_slopes(data=G2); (intercept_g2 <- intercept); slope_g2 <- slope
+G3 <- cosy3_do[cosy3_do$GOLD_GLI_V2==3,]; lufu_random_slopes(data=G3); (intercept_g3 <- intercept); slope_g3 <- slope
+G4 <- cosy3_do[cosy3_do$GOLD_GLI_V2==4,]; lufu_random_slopes(data=G4); (intercept_g4 <- intercept); slope_g4 <- slope
+
+
+#### Mean Slope (model)^1 [original values / not winsorized]:
+
+lufu_random_slopes_big_model <- function(data, FUN=summary){
+ dat_long <- tidyr::pivot_longer(data, cols=c("FEV1_GLI_V1","FEV1_GLI_V3","FEV1_GLI_V4","FEV1_GLI_V5","FEV1_GLI_V6"), names_to="FEV1_GLI")
+ class(dat_long) <- "data.frame"
+ colnames(dat_long)[colnames(dat_long)=="value"] <- "FEV1"
+ dat_long$visit <- as.numeric(substr(dat_long$FEV1_GLI, 11, 11))
+
+ dat_long$time3 <- NA
+ dat_long[dat_long$visit==1,]$time3 <- 0
+ #dat_long[dat_long$visit==2,]$time3 <- 6
+ dat_long[dat_long$visit==3,]$time3 <- (dat_long[dat_long$visit==3,]$DATUM_V3 - dat_long[dat_long$visit==3,]$DATUM_V1) / 365.25
+ dat_long[dat_long$visit==4,]$time3 <- (dat_long[dat_long$visit==4,]$DATUM_V4 - dat_long[dat_long$visit==4,]$DATUM_V1) / 365.25
+ dat_long[dat_long$visit==5,]$time3 <- (dat_long[dat_long$visit==5,]$DATUM_V5 - dat_long[dat_long$visit==5,]$DATUM_V1) / 365.25
+ dat_long[dat_long$visit==6,]$time3 <- (dat_long[dat_long$visit==6,]$DATUM_V6 - dat_long[dat_long$visit==6,]$DATUM_V1) / 365.25
+
+ dat_long <- dat_long[complete.cases(dat_long$FEV1),]
+ dat_long <<- dat_long[,c("FEV1","time3","subject","dropout_reason_name","GOLD_GLI_V2")] #beschränken auf relevante Variablen
+ (lmer_res <<- lmer(FEV1 ~ time3*dropout_reason_name*as.factor(GOLD_GLI_V2) + (1+time3|subject), data=dat_long, control = lmerControl(optimizer ="Nelder_Mead"))) #Hier mit GOLD_GLI_V2, wie es sein soll!
+ 
+ ann_declines <<- fixef(lmer_res)[2] + ranef(lmer_res)$subject[,2]
+ IDs <<- rownames(fixef(lmer_res)[2] + ranef(lmer_res)$subject)
+ return(lmer_res)
+}
+lufu_random_slopes_big_model(data=cosy3_) #Koeffizienten aus lmer_res exportiert in Doppelte Interaktion - Ergebnistabelle_korr.xlsx und in Table 3 eingetragen (Estimated annual lung function decline by GOLD stage and dropout reason).
+
+#### Mean Slope (model)2 [Winsorized (5%) over all lung function trajectories]
+#
+DF <- data.frame(IDs, ann_declines)
+colnames(DF)[1] <- "subject"
+#mergen mit Dropout-Gründen:
+cosy3_do <- merge(DF, cosy3_, by="subject")
+
+tmp <- aggregate(ann_decline_winsor05 ~ GOLD_GLI_V2 + dropout_reason_name, data=cosy3_do, FUN=mean)
+rounded <- round(aggregate(ann_decline_winsor05 ~ GOLD_GLI_V2 + dropout_reason_name, data=cosy3_do, FUN=mean)[,3],4)
+cbind(tmp,rounded)
+
+#Fallzahlen je nach Stadium und Dropout-Grund:
+table(cosy3_[,c("dropout_reason_name","GOLD_GLI_V2")])
+
+######################
+# ehem. Figure 2: Lung function trajectories according to GOLD stage at baseline and dropout reason
+
+g1_cc <- c(intercept_g1_cc, intercept_g1_cc + slope_g1_cc*(1:5))
+g1_nd <- c(intercept_g1_nd, intercept_g1_nd + slope_g1_nd*(1:5))
+g1_nr <- c(intercept_g1_nr, intercept_g1_nr + slope_g1_nr*(1:5))
+g1_ti <- c(intercept_g1_ti, intercept_g1_ti + slope_g1_ti*(1:5))
+g1_di <- c(intercept_g1_di, intercept_g1_di + slope_g1_di*(1:5))
+g1_ni <- c(intercept_g1_ni, intercept_g1_ni + slope_g1_ni*(1:5))
+g1_any <- c(intercept_g1, intercept_g1 - slope_g1*(1:5))
+
+g2_cc <- c(intercept_g2_cc, intercept_g2_cc + slope_g2_cc*(1:5))
+g2_nd <- c(intercept_g2_nd, intercept_g2_nd + slope_g2_nd*(1:5))
+g2_nr <- c(intercept_g2_nr, intercept_g2_nr + slope_g2_nr*(1:5))
+g2_ti <- c(intercept_g2_ti, intercept_g2_ti + slope_g2_ti*(1:5))
+g2_di <- c(intercept_g2_di, intercept_g2_di + slope_g2_di*(1:5))
+g2_ni <- c(intercept_g2_ni, intercept_g2_ni + slope_g2_ni*(1:5))
+g2_any <- c(intercept_g2, intercept_g2 - slope_g2*(1:5))
+
+g3_cc <- c(intercept_g3_cc, intercept_g3_cc + slope_g3_cc*(1:5))
+g3_nd <- c(intercept_g3_nd, intercept_g3_nd + slope_g3_nd*(1:5))
+g3_nr <- c(intercept_g3_nr, intercept_g3_nr + slope_g3_nr*(1:5))
+g3_ti <- c(intercept_g3_ti, intercept_g3_ti + slope_g3_ti*(1:5))
+g3_di <- c(intercept_g3_di, intercept_g3_di + slope_g3_di*(1:5))
+g3_ni <- c(intercept_g3_ni, intercept_g3_ni + slope_g3_ni*(1:5))
+g3_any <- c(intercept_g3, intercept_g3 + slope_g3*(1:5))
+
+g4_cc <- c(intercept_g4_cc, intercept_g4_cc + slope_g4_cc*(1:5))
+g4_nd <- c(intercept_g4_nd, intercept_g4_nd + slope_g4_nd*(1:5))
+g4_nr <- c(intercept_g4_nr, intercept_g4_nr + slope_g4_nr*(1:5))
+g4_ti <- c(intercept_g4_ti, intercept_g4_ti + slope_g4_ti*(1:5))
+g4_di <- c(intercept_g4_di, intercept_g4_di + slope_g4_di*(1:5))
+g4_ni <- c(intercept_g4_ni, intercept_g4_ni + slope_g4_ni*(1:5))
+g4_any <- c(intercept_g4, intercept_g4 + slope_g4*(1:5))
+
+plot(g1_any, ylim=c(10,90), type="b", xlab="Years", ylab="FEV1 % predicted", main="Lung function trajectories according to\nGOLD stage at baseline and dropout reason")
+points(g1_nd, type="b", lty=2)
+points(g1_nr, type="b", lty=3)
+points(g1_ti, type="b", lty=4)
+points(g1_di, type="b", lty=5)
+lines(g1_cc)
+
+points(g2_any, type="b", lty=1)
+points(g2_nd, type="b", lty=2)
+points(g2_nr, type="b", lty=3)
+points(g2_ti, type="b", lty=4)
+points(g2_di, type="b", lty=5)
+lines(g2_cc)
+
+points(g3_any, type="b", lty=1)
+points(g3_nd, type="b", lty=2)
+points(g3_nr, type="b", lty=3)
+points(g3_ti, type="b", lty=4)
+points(g3_di, type="b", lty=5)
+lines(g3_cc)
+
+points(g4_any, type="b", lty=1)
+points(g4_nd, type="b", lty=2)
+points(g4_nr, type="b", lty=3)
+points(g4_ti, type="b", lty=4)
+points(g4_di, type="b", lty=5)
+lines(g4_cc)
+
+legend("bottomleft", lty=1:6, c("any","center closed","no dropout","not reached","too ill","died"))
+
+
+######################################
+# Alternativvorschlag von ChatGPT 5 Thinking:
+# install.packages(c("tidyverse","ggrepel"))  # falls nötig
+library(tidyverse)
+library(ggrepel)
+
+# ---- Deine Objekte einsammeln (g1_any, g1_nd, ..., g4_cc) ----
+reasons <- c("any","nd","nr","ti","di","ni","cc")
+golds   <- paste0("g", 1:4)
+
+nm <- as.vector(outer(golds, reasons, paste, sep = "_"))
+nm <- nm[nm %in% ls()]  # nur existierende Objekte
+
+df <- purrr::imap_dfr(mget(nm), ~ tibble(
+  Year   = seq_along(.x),
+  FEV1   = as.numeric(.x),
+  GOLD   = sub("_.*","", .y),
+  reason = sub(".*_","", .y)
+))
+
+# Labels & Ordnung
+reason_lab <- c(
+  any="any",
+  nd="no dropout",
+  nr="not reached",
+  ti="too ill",
+  di="died",
+  ni="not interested",
+  cc="complete cases"
+)
+
+df <- df %>%
+  mutate(
+    GOLD   = factor(GOLD, levels = paste0("g",1:4), labels = paste("GOLD",1:4)),
+    reason = factor(reason, levels = names(reason_lab), labels = unname(reason_lab)),
+    is_cc  = (reason == "complete cases")
+  )
+
+# ---- Rot-Grün-freundliche Farben (Okabe-Ito inspiriert; ohne Grün) ----
+pal <- c(
+  "any"            = "#0072B2", # blau
+  "no dropout"     = "#F0E442", # gelb (dunkleres Gelb)
+  "not reached"    = "#E41A1C", # rot
+  "too ill"        = "#7F7F7F", # grau
+  "died"           = "#6A3D9A", # violett
+  "not interested" = "#CC79A7"  # magenta/violett (falls vorhanden)
+)
+
+# Für direkte Beschriftungen: letzter Punkt pro (GOLD, reason), ohne cc
+lab_dat <- df %>%
+  filter(!is_cc) %>%
+  group_by(GOLD, reason) %>%
+  slice_max(Year, n = 1, with_ties = FALSE) %>%
+  ungroup()
+
+base_dat <- filter(df, !is_cc)
+cc_dat   <- filter(df,  is_cc)
+
+# ---- Facet-spezifische y-Limits erzwingen ----
+limits_df <- tibble(
+  GOLD  = factor(paste("GOLD",1:4), levels = paste("GOLD",1:4)),
+  y_low = c(50, 50,  0,  0),
+  y_hi  = c(100,100,50, 50)
+) |>
+  pivot_longer(c(y_low, y_hi), names_to = "k", values_to = "FEV1") |>
+  mutate(Year = max(df$Year, na.rm = TRUE))
+
+ggplot(base_dat, aes(Year, FEV1, color = reason, linetype = reason, shape = reason)) +
+  # unsichtbare Punkte setzen die y-Skala pro Facet auf die gewünschten Bereiche
+  geom_blank(data = limits_df, inherit.aes = FALSE, aes(Year, FEV1)) +
+  geom_line() +
+  geom_point(size = 2) +
+  # complete cases: schwarz + dick
+  geom_line(data = cc_dat, aes(Year, FEV1, group = reason),
+            inherit.aes = FALSE, linewidth = 1.3, color = "black") +
+  geom_point(data = cc_dat, aes(Year, FEV1),
+             inherit.aes = FALSE, size = 2.6, color = "black") +
+  # direkte Labels am rechten Rand
+  geom_text_repel(data = lab_dat, aes(label = reason),
+                  show.legend = FALSE, direction = "y", hjust = 0,
+                  nudge_x = 0.25, segment.alpha = 0.4, size = 3) +
+  facet_wrap(~ GOLD, nrow = 2, scales = "free_y") +
+  scale_color_manual(values = pal) +
+  scale_linetype_manual(values = c("solid","dashed","dotdash","twodash","longdash","dotted")) +
+  scale_shape_manual(values = c(16, 1, 17, 15, 3, 8)) +
+  scale_x_continuous("Years", expand = expansion(mult = c(0.02, 0.12))) +
+  scale_y_continuous("FEV1 % predicted", expand = expansion(mult = c(0.02, 0))) +
+  guides(color = "none", linetype = "none", shape = "none") +
+  labs(
+    title = "Lung function trajectories by GOLD and dropout reason",
+    subtitle = "Black/thick = complete cases"
+  ) +
+  coord_cartesian(clip = "off") +
+  theme_bw() +
+  theme(
+    strip.text   = element_text(face = "bold"),
+    plot.title   = element_text(face = "bold"),
+    plot.margin  = margin(5.5, 30, 5.5, 5.5)  # rechts etwas mehr Platz für Labels
+  )
+
+
+
+###########################
+## Supplementary Table 2. Estimated annual lung function decline (random slopes model), overall and according to GOLD stage at V2 and Tiffeneau index (original estimates, not winsorized, using V1 + V3-6).
+
+lufu_random_slopes(data=cosy3_) #-0.8776
+sd(lufu_random_slopes(data=cosy3_, print)) #0.879685
+lufu_random_slopes(data=cosy3_[!is.na(cosy3_$TIFF_V2) & cosy3_$TIFF_V2<=0.7 & !is.na(cosy3_$GOLD_GLI_V2),])
+sd(lufu_random_slopes(data=cosy3_[!is.na(cosy3_$TIFF_V2) & cosy3_$TIFF_V2<=0.7 & !is.na(cosy3_$GOLD_GLI_V2),], print))
+lufu_random_slopes(data=cosy3_[!is.na(cosy3_$TIFF_V2) & cosy3_$TIFF_V2<=0.7 & !is.na(cosy3_$GOLD_GLI_V2) & cosy3_$GOLD_GLI_V2==1,])
+sd(lufu_random_slopes(data=cosy3_[!is.na(cosy3_$TIFF_V2) & cosy3_$TIFF_V2<=0.7 & !is.na(cosy3_$GOLD_GLI_V2) & cosy3_$GOLD_GLI_V2==1,], print))
+lufu_random_slopes(data=cosy3_[!is.na(cosy3_$TIFF_V2) & cosy3_$TIFF_V2<=0.7 & !is.na(cosy3_$GOLD_GLI_V2) & cosy3_$GOLD_GLI_V2==2,])
+sd(lufu_random_slopes(data=cosy3_[!is.na(cosy3_$TIFF_V2) & cosy3_$TIFF_V2<=0.7 & !is.na(cosy3_$GOLD_GLI_V2) & cosy3_$GOLD_GLI_V2==2,], print))
+lufu_random_slopes(data=cosy3_[!is.na(cosy3_$TIFF_V2) & cosy3_$TIFF_V2<=0.7 & !is.na(cosy3_$GOLD_GLI_V2) & cosy3_$GOLD_GLI_V2==3,])
+sd(lufu_random_slopes(data=cosy3_[!is.na(cosy3_$TIFF_V2) & cosy3_$TIFF_V2<=0.7 & !is.na(cosy3_$GOLD_GLI_V2) & cosy3_$GOLD_GLI_V2==3,], print))
+lufu_random_slopes(data=cosy3_[!is.na(cosy3_$TIFF_V2) & cosy3_$TIFF_V2<=0.7 & !is.na(cosy3_$GOLD_GLI_V2) & cosy3_$GOLD_GLI_V2==4,])
+sd(lufu_random_slopes(data=cosy3_[!is.na(cosy3_$TIFF_V2) & cosy3_$TIFF_V2<=0.7 & !is.na(cosy3_$GOLD_GLI_V2) & cosy3_$GOLD_GLI_V2==4,], print))
+lufu_random_slopes(data=cosy3_[!is.na(cosy3_$TIFF_V2) & cosy3_$TIFF_V2>0.7 & !is.na(cosy3_$GOLD_GLI_V2),])
+sd(lufu_random_slopes(data=cosy3_[!is.na(cosy3_$TIFF_V2) & cosy3_$TIFF_V2<=0.7 & !is.na(cosy3_$GOLD_GLI_V2),], print))
+lufu_random_slopes(data=cosy3_[!is.na(cosy3_$TIFF_V2) & cosy3_$TIFF_V2>0.7 & !is.na(cosy3_$GOLD_GLI_V2) & cosy3_$GOLD_GLI_V2==1,])
+sd(lufu_random_slopes(data=cosy3_[!is.na(cosy3_$TIFF_V2) & cosy3_$TIFF_V2>0.7 & !is.na(cosy3_$GOLD_GLI_V2) & cosy3_$GOLD_GLI_V2==1,], print))
+lufu_random_slopes(data=cosy3_[!is.na(cosy3_$TIFF_V2) & cosy3_$TIFF_V2>0.7 & !is.na(cosy3_$GOLD_GLI_V2) & cosy3_$GOLD_GLI_V2==2,])
+sd(lufu_random_slopes(data=cosy3_[!is.na(cosy3_$TIFF_V2) & cosy3_$TIFF_V2>0.7 & !is.na(cosy3_$GOLD_GLI_V2) & cosy3_$GOLD_GLI_V2==2,], print))
+
+lufu_random_slopes_ml(data=cosy3_)
+sd(lufu_random_slopes_ml(data=cosy3_, print))
+lufu_random_slopes_ml(data=cosy3_[!is.na(cosy3_$TIFF_V2) & !is.na(cosy3_$GOLD_GLI_V2),])
+sd(lufu_random_slopes_ml(data=cosy3_[!is.na(cosy3_$TIFF_V2) & !is.na(cosy3_$GOLD_GLI_V2),], print))
+lufu_random_slopes_ml(data=cosy3_[!is.na(cosy3_$TIFF_V2) & cosy3_$TIFF_V2<=0.7 & !is.na(cosy3_$GOLD_GLI_V2),])
+sd(lufu_random_slopes_ml(data=cosy3_[!is.na(cosy3_$TIFF_V2) & cosy3_$TIFF_V2<=0.7 & !is.na(cosy3_$GOLD_GLI_V2),], print))
+lufu_random_slopes_ml(data=cosy3_[!is.na(cosy3_$TIFF_V2) & cosy3_$TIFF_V2<=0.7 & !is.na(cosy3_$GOLD_GLI_V2) & cosy3_$GOLD_GLI_V2==1,])
+sd(lufu_random_slopes_ml(data=cosy3_[!is.na(cosy3_$TIFF_V2) & cosy3_$TIFF_V2<=0.7 & !is.na(cosy3_$GOLD_GLI_V2) & cosy3_$GOLD_GLI_V2==1,], print))
+lufu_random_slopes_ml(data=cosy3_[!is.na(cosy3_$TIFF_V2) & cosy3_$TIFF_V2<=0.7 & !is.na(cosy3_$GOLD_GLI_V2) & cosy3_$GOLD_GLI_V2==2,])
+sd(lufu_random_slopes_ml(data=cosy3_[!is.na(cosy3_$TIFF_V2) & cosy3_$TIFF_V2<=0.7 & !is.na(cosy3_$GOLD_GLI_V2) & cosy3_$GOLD_GLI_V2==2,], print))
+lufu_random_slopes_ml(data=cosy3_[!is.na(cosy3_$TIFF_V2) & cosy3_$TIFF_V2<=0.7 & !is.na(cosy3_$GOLD_GLI_V2) & cosy3_$GOLD_GLI_V2==3,])
+sd(lufu_random_slopes_ml(data=cosy3_[!is.na(cosy3_$TIFF_V2) & cosy3_$TIFF_V2<=0.7 & !is.na(cosy3_$GOLD_GLI_V2) & cosy3_$GOLD_GLI_V2==3,], print))
+lufu_random_slopes_ml(data=cosy3_[!is.na(cosy3_$TIFF_V2) & cosy3_$TIFF_V2<=0.7 & !is.na(cosy3_$GOLD_GLI_V2) & cosy3_$GOLD_GLI_V2==4,])
+sd(lufu_random_slopes_ml(data=cosy3_[!is.na(cosy3_$TIFF_V2) & cosy3_$TIFF_V2<=0.7 & !is.na(cosy3_$GOLD_GLI_V2) & cosy3_$GOLD_GLI_V2==4,], print))
+lufu_random_slopes_ml(data=cosy3_[!is.na(cosy3_$TIFF_V2) & cosy3_$TIFF_V2>0.7 & !is.na(cosy3_$GOLD_GLI_V2),])
+sd(lufu_random_slopes_ml(data=cosy3_[!is.na(cosy3_$TIFF_V2) & cosy3_$TIFF_V2>0.7 & !is.na(cosy3_$GOLD_GLI_V2),], print))
+lufu_random_slopes_ml(data=cosy3_[!is.na(cosy3_$TIFF_V2) & cosy3_$TIFF_V2>0.7 & !is.na(cosy3_$GOLD_GLI_V2) & cosy3_$GOLD_GLI_V2==1,])
+sd(lufu_random_slopes_ml(data=cosy3_[!is.na(cosy3_$TIFF_V2) & cosy3_$TIFF_V2>0.7 & !is.na(cosy3_$GOLD_GLI_V2) & cosy3_$GOLD_GLI_V2==1,], print))
+lufu_random_slopes_ml(data=cosy3_[!is.na(cosy3_$TIFF_V2) & cosy3_$TIFF_V2>0.7 & !is.na(cosy3_$GOLD_GLI_V2) & cosy3_$GOLD_GLI_V2==2,])
+sd(lufu_random_slopes_ml(data=cosy3_[!is.na(cosy3_$TIFF_V2) & cosy3_$TIFF_V2>0.7 & !is.na(cosy3_$GOLD_GLI_V2) & cosy3_$GOLD_GLI_V2==2,], print))
+
+###########################
+## Supplementary Table 3. Predictors of lung function decline at baseline.
+
+#oberer Teil: FEV1 in %pred.:
+
+ dat_long <- tidyr::pivot_longer(cosy3_, cols=c("FEV1_GLI_V1","FEV1_GLI_V3","FEV1_GLI_V4","FEV1_GLI_V5","FEV1_GLI_V6"), names_to="FEV1_GLI")
+ class(dat_long) <- "data.frame"
+ colnames(dat_long)[colnames(dat_long)=="value"] <- "FEV1"
+ dat_long$visit <- as.numeric(substr(dat_long$FEV1_GLI, 11, 11))
+
+ dat_long$time3 <- NA
+ dat_long[dat_long$visit==1,]$time3 <- 0
+ #dat_long[dat_long$visit==2,]$time3 <- 6
+ dat_long[dat_long$visit==3,]$time3 <- (dat_long[dat_long$visit==3,]$DATUM_V3 - dat_long[dat_long$visit==3,]$DATUM_V1) / 365.25
+ dat_long[dat_long$visit==4,]$time3 <- (dat_long[dat_long$visit==4,]$DATUM_V4 - dat_long[dat_long$visit==4,]$DATUM_V1) / 365.25
+ dat_long[dat_long$visit==5,]$time3 <- (dat_long[dat_long$visit==5,]$DATUM_V5 - dat_long[dat_long$visit==5,]$DATUM_V1) / 365.25
+ dat_long[dat_long$visit==6,]$time3 <- (dat_long[dat_long$visit==6,]$DATUM_V6 - dat_long[dat_long$visit==6,]$DATUM_V1) / 365.25
+
+ dat_long <- dat_long[complete.cases(dat_long$FEV1),]
+ dat_long <- dat_long[,c("FEV1","time3","dropout_reason_name","subject")] #beschränken auf relevante Variablen
+ lmer_random_slope <- lmer(FEV1 ~ time3 + (1+time3|subject) + dropout_reason_name
+ , data=dat_long, control = lmerControl(optimizer ="Nelder_Mead"))
+
+x <- fixef(lmer_random_slope)[2] + ranef(lmer_random_slope)$subject[,2]
+cosy3_ <- data.frame(cosy3_, x)
+cosy3_$SEX <- as.factor(cosy3_$SEX)
+cosy3_$GOLD_GLI_V1 <- as.factor(cosy3_$GOLD_GLI_V1)
+cosy3_$exa_v1 <- ifelse(cosy3_$EXA_V1 %in% c(0,1), "none/mild", cosy3_$EXA_V1)
+cosy3_[!is.na(cosy3_$exa_v1) & cosy3_$exa_v1 %in% c("0","1"),]$exa_v1 <- "none/mild"
+cosy3_[!is.na(cosy3_$exa_v1) & cosy3_$exa_v1=="2",]$exa_v1 <- "moderate"
+cosy3_[!is.na(cosy3_$exa_v1) & cosy3_$exa_v1=="3",]$exa_v1 <- "severe"
+cosy3_$exa_v1 <- factor(cosy3_$exa_v1)
+levels(cosy3_$exa_v1) <- c("none/mild", "moderate", "severe")
+cosy3_$exa_v1 <- relevel(cosy3_$exa_v1, ref = "none/mild")
+cosy3_$AGE_V1_10y <- cosy3_$AGE_V1 / 10
+
+summary(lm(x ~ as.factor(GOLD_GLI_V1), data=cosy3_))
+summary(lm(x ~ as.factor(SEX), data=cosy3_))
+summary(lm(x ~ age_group, data=cosy3_)); summary(lm(x ~ AGE_V1_10y, data=cosy3_))
+summary(lm(x ~ SMOKER_V1, data=cosy3_))
+summary(lm(x ~ as.factor(exa_v1), data=cosy3_))
+summary(lm(x ~ EQ5D_V1, data=cosy3_))
+summary(lm(x ~ SGRQ_TOTAL_V1, data=cosy3_))
+summary(lm(x ~ CAT_V1, data=cosy3_))
+summary(lm(x ~ ATEM_V1_2_MRC_V1, data=cosy3_))
+
+
+#Mutually adjusted (I):
+(a <- round(summary(lm(x ~ as.factor(GOLD_GLI_V1) + SEX + AGE_V1_10y + SMOKER_V1, data=cosy3_))$coef[,1],3)) #point
+(b <- round(summary(lm(x ~ as.factor(GOLD_GLI_V1) + SEX + AGE_V1_10y + SMOKER_V1, data=cosy3_))$coef[,2],3)) #SE
+paste0(a, " (", b, ")")
+round(summary(lm(x ~ as.factor(GOLD_GLI_V1) + SEX + AGE_V1_10y + SMOKER_V1, data=cosy3_))$coef[,4],3) #p values
+
+#Mutually adjusted (II):
+(a <- round(summary(lm(x ~ as.factor(GOLD_GLI_V1) + SEX + AGE_V1_10y + SMOKER_V1 + exa_v1 + EQ5D_V1, data=cosy3_))$coef[,1],3)) #point
+(b <- round(summary(lm(x ~ as.factor(GOLD_GLI_V1) + SEX + AGE_V1_10y + SMOKER_V1 + exa_v1 + EQ5D_V1, data=cosy3_))$coef[,2],3)) #SE
+paste0(a, " (", b, ")")
+round(summary(lm(x ~ as.factor(GOLD_GLI_V1) + SEX + AGE_V1_10y + SMOKER_V1 + exa_v1 + EQ5D_V1, data=cosy3_))$coef[,4],3) #p values
+
+
+# unterer Teil: FEV1 in ml:
+
+ dat_long <- tidyr::pivot_longer(cosy3_, cols=c("LUFU_FEV1_V1","LUFU_FEV1_V3","LUFU_FEV1_V4","LUFU_FEV1_V5","LUFU_FEV1_V6"), names_to="FEV1_GLI")
+ class(dat_long) <- "data.frame"
+ colnames(dat_long)[colnames(dat_long)=="value"] <- "FEV1"
+ dat_long$visit <- as.numeric(substr(dat_long$FEV1_GLI, 12, 12))
+
+ dat_long$time3 <- NA
+ dat_long[dat_long$visit==1,]$time3 <- 0
+ #dat_long[dat_long$visit==2,]$time3 <- 6
+ dat_long[dat_long$visit==3,]$time3 <- (dat_long[dat_long$visit==3,]$DATUM_V3 - dat_long[dat_long$visit==3,]$DATUM_V1) / 365.25
+ dat_long[dat_long$visit==4,]$time3 <- (dat_long[dat_long$visit==4,]$DATUM_V4 - dat_long[dat_long$visit==4,]$DATUM_V1) / 365.25
+ dat_long[dat_long$visit==5,]$time3 <- (dat_long[dat_long$visit==5,]$DATUM_V5 - dat_long[dat_long$visit==5,]$DATUM_V1) / 365.25
+ dat_long[dat_long$visit==6,]$time3 <- (dat_long[dat_long$visit==6,]$DATUM_V6 - dat_long[dat_long$visit==6,]$DATUM_V1) / 365.25
+
+ dat_long <- dat_long[complete.cases(dat_long$FEV1),]
+ dat_long <- dat_long[,c("FEV1","time3","dropout_reason_name","subject")] #beschränken auf relevante Variablen
+ lmer_random_slope <- lmer(FEV1 ~ time3 + (1+time3|subject) + dropout_reason_name
+ , data=dat_long, control = lmerControl(optimizer ="Nelder_Mead"))
+
+y <- 1000*(fixef(lmer_random_slope)[2] + ranef(lmer_random_slope)$subject[,2])
+cosy3_ <- data.frame(cosy3_, y)
+cosy3_$SEX <- as.factor(cosy3_$SEX)
+cosy3_$GOLD_GLI_V1 <- as.factor(cosy3_$GOLD_GLI_V1)
+cosy3_$exa_v1 <- ifelse(cosy3_$EXA_V1 %in% c(0,1), "none/mild", cosy3_$EXA_V1)
+cosy3_[!is.na(cosy3_$exa_v1) & cosy3_$exa_v1 %in% c("0","1"),]$exa_v1 <- "none/mild"
+cosy3_[!is.na(cosy3_$exa_v1) & cosy3_$exa_v1=="2",]$exa_v1 <- "moderate"
+cosy3_[!is.na(cosy3_$exa_v1) & cosy3_$exa_v1=="3",]$exa_v1 <- "severe"
+cosy3_$exa_v1 <- factor(cosy3_$exa_v1)
+levels(cosy3_$exa_v1) <- c("none/mild", "moderate", "severe")
+cosy3_$exa_v1 <- relevel(cosy3_$exa_v1, ref = "none/mild")
+cosy3_$AGE_V1_10y <- cosy3_$AGE_V1 / 10
+
+summary(lm(y ~ as.factor(GOLD_GLI_V1), data=cosy3_))
+summary(lm(y ~ as.factor(SEX), data=cosy3_))
+summary(lm(y ~ age_group, data=cosy3_)); summary(lm(x ~ AGE_V1_10y, data=cosy3_))
+summary(lm(y ~ SMOKER_V1, data=cosy3_))
+summary(lm(y ~ as.factor(exa_v1), data=cosy3_))
+summary(lm(y ~ EQ5D_V1, data=cosy3_))
+summary(lm(y ~ SGRQ_TOTAL_V1, data=cosy3_))
+summary(lm(y ~ CAT_V1, data=cosy3_))
+summary(lm(y ~ ATEM_V1_2_MRC_V1, data=cosy3_))
+
+
+#Mutually adjusted (I):
+(a <- round(summary(lm(y ~ as.factor(GOLD_GLI_V1) + SEX + AGE_V1_10y + SMOKER_V1, data=cosy3_))$coef[,1],3)) #point
+(b <- round(summary(lm(y ~ as.factor(GOLD_GLI_V1) + SEX + AGE_V1_10y + SMOKER_V1, data=cosy3_))$coef[,2],3)) #SE
+paste0(a, " (", b, ")")
+round(summary(lm(y ~ as.factor(GOLD_GLI_V1) + SEX + AGE_V1_10y + SMOKER_V1, data=cosy3_))$coef[,4],3) #p values
+
+#Mutually adjusted (II):
+(a <- round(summary(lm(y ~ as.factor(GOLD_GLI_V1) + SEX + AGE_V1_10y + SMOKER_V1 + exa_v1 + EQ5D_V1, data=cosy3_))$coef[,1],3)) #point
+(b <- round(summary(lm(y ~ as.factor(GOLD_GLI_V1) + SEX + AGE_V1_10y + SMOKER_V1 + exa_v1 + EQ5D_V1, data=cosy3_))$coef[,2],3)) #SE
+paste0(a, " (", b, ")")
+round(summary(lm(y ~ as.factor(GOLD_GLI_V1) + SEX + AGE_V1_10y + SMOKER_V1 + exa_v1 + EQ5D_V1, data=cosy3_))$coef[,4],3) #p values
+
+
+######################################
+# "Alternative Variante (b)	V2-6, V1 für GOLD-Klassif., 5% winsor. über alle FEV1-Messungen hinweg):"
+
+###########################
+# =Supplementary Table 4. Estimated annual lung function decline when using FEV1 6 months after recruitment as baseline measurement to address regression to the mean. Estimates winsorized.
+
+######## Achtung: Zur Korrektur von RTM muss GOLD-Klassif. unabhängig sein von Lufu-Schätzungen! D.h. wenn Lufu V1+V3 -> GOLD bei V2. (Alternativ: Lufu V2-V6 -> GOLD bei V1.)
+
+lufu_random_slopes_rtm <- function(data, FUN=summary){
+ dat_long <- tidyr::pivot_longer(data, cols=c("FEV1_GLI_V2","FEV1_GLI_V3","FEV1_GLI_V4","FEV1_GLI_V5","FEV1_GLI_V6"), names_to="FEV1_GLI") #Hier FEV1_GLI_V1 weggelassen, stattdessen ..._V2 gewählt.
+ class(dat_long) <- "data.frame"
+ colnames(dat_long)[colnames(dat_long)=="value"] <- "FEV1"
+ dat_long$visit <- as.numeric(substr(dat_long$FEV1_GLI, 11, 11))
+
+ dat_long$time3 <- NA
+ #dat_long[dat_long$visit==1,]$time3 <- 0
+ dat_long[dat_long$visit==3,]$time3 <- (dat_long[dat_long$visit==3,]$DATUM_V3 - dat_long[dat_long$visit==3,]$DATUM_V2) / 365.25
+ dat_long[dat_long$visit==4,]$time3 <- (dat_long[dat_long$visit==4,]$DATUM_V4 - dat_long[dat_long$visit==4,]$DATUM_V2) / 365.25
+ dat_long[dat_long$visit==5,]$time3 <- (dat_long[dat_long$visit==5,]$DATUM_V5 - dat_long[dat_long$visit==5,]$DATUM_V2) / 365.25
+ dat_long[dat_long$visit==6,]$time3 <- (dat_long[dat_long$visit==6,]$DATUM_V6 - dat_long[dat_long$visit==6,]$DATUM_V2) / 365.25
+
+ dat_long <- dat_long[complete.cases(dat_long$FEV1),]
+ dat_long <<- dat_long[,c("FEV1","time3","subject")] #beschränken auf relevante Variablen
+ lmer_random_slope <- lmer(FEV1 ~ time3 + (1+time3|subject)# + dropout_reason_name
+ , data=dat_long, control = lmerControl(optimizer ="Nelder_Mead"))
+ ann_declines <<- fixef(lmer_random_slope)[2] + ranef(lmer_random_slope)$subject[,2]
+ IDs <<- rownames(ranef(lmer_random_slope)$subject)
+ intercept <<- fixef(lmer_random_slope)[1]
+ FUN(fixef(lmer_random_slope)[2] + ranef(lmer_random_slope)$subject[,2])
+}
+
+#FEV1 in percent of predicted normal values
+#lufu_random_slopes_rtm():
+summary(x <- psych::winsor(lufu_random_slopes_rtm(data=cosy3_, FUN=print), trim=0.05)); sd(x) #Hier cosy3_, weil das die sind, die V2 hatten.
+ann_decline_winsor05_rtm <- x; summary(ann_decline_winsor05_rtm)
+ann_decline_winsor05_DF <- data.frame(IDs, ann_decline_winsor05_rtm)
+colnames(ann_decline_winsor05_DF)[1] <- "subject"
+cosy3_ <- cbind(cosy3_, ann_decline_winsor05_rtm)
+
+#V2-V6, V1 für GOLD-Klassif., 5% winsor. über alle FEV1-Messungen hinweg:
+tmp <- merge(ann_decline_winsor05_DF, cosy3_[,c("subject","GOLD_GLI_V1","TIFF_V1")], by="subject")
+summary(tmp$ann_decline_winsor05_rtm); sd(tmp$ann_decline_winsor05_rtm)
+# tapply(tmp$ann_decline_winsor05_rtm, tmp$GOLD_GLI_V1, summary) ##Nicht so relevant, weil für alle TIFF-Werte und nicht nur für die mit TIFF<=0.7 oder >0.7.
+# tapply(tmp$ann_decline_winsor05_rtm, tmp$GOLD_GLI_V1, sd)
+
+#Nur in denen mit Tiff.<=0.7:
+tmp2 <- tmp[!is.na(tmp$TIFF_V1) & tmp$TIFF_V1 <= 0.7,]
+summary(tmp2$ann_decline_winsor05_rtm); sd(tmp2$ann_decline_winsor05_rtm)
+#tapply(tmp2$ann_decline_winsor05_rtm, tmp2$GOLD_GLI_V1, summary) #oder schöner:
+lapply(tapply(tmp2$ann_decline_winsor05_rtm, tmp2$GOLD_GLI_V1, summary), round, 2)
+#tapply(tmp2$ann_decline_winsor05_rtm, tmp2$GOLD_GLI_V1, sd) #oder schöner:
+lapply(tapply(tmp2$ann_decline_winsor05_rtm, tmp2$GOLD_GLI_V1, sd), round, 2)
+
+#Nur in denen mit Tiff.>0.7:
+tmp3 <- tmp[!is.na(tmp$TIFF_V1) & tmp$TIFF_V1 > 0.7,]
+summary(tmp3$ann_decline_winsor05_rtm); sd(tmp3$ann_decline_winsor05_rtm)
+lapply(tapply(tmp3$ann_decline_winsor05_rtm, tmp3$GOLD_GLI_V1, summary), round, 2)
+lapply(tapply(tmp3$ann_decline_winsor05_rtm, tmp3$GOLD_GLI_V1, sd), round, 2)
+
+
+lufu_random_slopes_ml_rtm <- function(data, FUN=summary, mytrim=0){
+ dat_long <- tidyr::pivot_longer(data, cols=c("LUFU_FEV1_V2","LUFU_FEV1_V3","LUFU_FEV1_V4","LUFU_FEV1_V5","LUFU_FEV1_V6")) #Hier FEV1_GLI_V1 weggelassen, stattdessen ..._V2 gewählt.
+ class(dat_long) <- "data.frame"
+ colnames(dat_long)[colnames(dat_long)=="value"] <- "FEV1"
+ dat_long$visit <- as.numeric(substr(dat_long$name, 12, 12))
+
+ dat_long$time3 <- NA
+ #dat_long[dat_long$visit==1,]$time3 <- 0
+ dat_long[dat_long$visit==2,]$time3 <- 0
+ dat_long[dat_long$visit==3,]$time3 <- (dat_long[dat_long$visit==3,]$DATUM_V3 - dat_long[dat_long$visit==3,]$DATUM_V2) / 365.25
+ dat_long[dat_long$visit==4,]$time3 <- (dat_long[dat_long$visit==4,]$DATUM_V4 - dat_long[dat_long$visit==4,]$DATUM_V2) / 365.25
+ dat_long[dat_long$visit==5,]$time3 <- (dat_long[dat_long$visit==5,]$DATUM_V5 - dat_long[dat_long$visit==5,]$DATUM_V2) / 365.25
+ dat_long[dat_long$visit==6,]$time3 <- (dat_long[dat_long$visit==6,]$DATUM_V6 - dat_long[dat_long$visit==6,]$DATUM_V2) / 365.25
+
+ dat_long <- dat_long[complete.cases(dat_long$FEV1),]
+ dat_long <<- dat_long[,c("FEV1","time3","subject")] #beschränken auf relevante Variablen
+ lmer_random_slope <- lmer(FEV1 ~ time3 + (1+time3|subject)# + dropout_reason_name
+ , data=dat_long, control = lmerControl(optimizer ="Nelder_Mead"))
+ ann_declines <<- fixef(lmer_random_slope)[2] + ranef(lmer_random_slope)$subject[,2]
+ IDs <<- rownames(ranef(lmer_random_slope)$subject)
+ intercept <<- fixef(lmer_random_slope)[1]
+ FUN(psych::winsor(1000*(fixef(lmer_random_slope)[2] + ranef(lmer_random_slope)$subject[,2]), trim=mytrim))
+}
+
+#FEV1 in mL
+#lufu_random_slopes_ml_rtm():
+summary(x <- psych::winsor(lufu_random_slopes_ml_rtm(data=cosy3_, FUN=print), trim=0.05)); sd(x)
+ann_decline_ml_winsor05 <- x; summary(ann_decline_ml_winsor05)
+ann_decline_ml_winsor05_DF <- data.frame(IDs, ann_decline_ml_winsor05)
+colnames(ann_decline_ml_winsor05_DF)[1] <- "subject"
+
+#V1,3-7, V2 für GOLD-Klassif., 5% winsor. über alle FEV1-Messungen hinweg:
+tmp <- merge(ann_decline_ml_winsor05_DF, cosy3_[,c("subject","GOLD_GLI_V1","TIFF_V1")], by="subject")
+summary(tmp$ann_decline_ml_winsor05)
+lapply(tapply(tmp$ann_decline_ml_winsor05, tmp$GOLD_GLI_V1, summary), round, 1)
+lapply(tapply(tmp$ann_decline_ml_winsor05, tmp$GOLD_GLI_V1, sd), round, 1)
+
+#Nur in denen mit Tiff.<=0.7:
+tmp2 <- tmp[!is.na(tmp$TIFF_V1) & tmp$TIFF_V1 <= 0.7,]
+summary(tmp2$ann_decline_ml_winsor05); sd(tmp2$ann_decline_ml_winsor05)
+#tapply(tmp2$ann_decline_ml_winsor05, tmp2$GOLD_GLI_V1, summary) #oder schöner:
+lapply(tapply(tmp2$ann_decline_ml_winsor05, tmp2$GOLD_GLI_V1, summary), round, 2)
+#tapply(tmp2$ann_decline_ml_winsor05, tmp2$GOLD_GLI_V1, sd) #oder schöner:
+lapply(tapply(tmp2$ann_decline_ml_winsor05, tmp2$GOLD_GLI_V1, sd), round, 2)
+
+#Nur in denen mit Tiff.>0.7:
+tmp3 <- tmp[!is.na(tmp$TIFF_V1) & tmp$TIFF_V1 > 0.7,]
+summary(tmp3$ann_decline_ml_winsor05); sd(tmp3$ann_decline_ml_winsor05)
+lapply(tapply(tmp3$ann_decline_ml_winsor05, tmp3$GOLD_GLI_V1, summary), round, 2)
+lapply(tapply(tmp3$ann_decline_ml_winsor05, tmp3$GOLD_GLI_V1, sd), round, 2)
+
+#Ergänzung (22.9.25): Wie ändert sich TIFF >= vs. < 70% von V1 zu V2?
+tmp <- cosy1[,c("TIFF_V1","TIFF_V1")]
+#Auf Leute mit TIFF_V1 beschränken:
+tmp <- tmp[!is.na(tmp$TIFF_V1),]
+table(rowSums(tmp <0.7), exclude=NULL) #0: Pre-COPD/PRISm bei V1+V3, 1: Erst Pre-COPD/PRISm, dann COPD oder umgekehrt, 2: COPD bei V1+V3. NA: Dropout bei V2.
+
+
+
+#Estimated annual lung function decline when using FEV1 6 months after recruitment for GOLD classification and lung function at V1 + V3-V6 to address regression to the mean. Estimates winsorized2..
+
+lufu_random_slopes_rtm2 <- function(data, FUN=summary){
+ dat_long <- tidyr::pivot_longer(data, cols=c("FEV1_GLI_V1","FEV1_GLI_V3","FEV1_GLI_V4","FEV1_GLI_V5","FEV1_GLI_V6"), names_to="FEV1_GLI") 
+ class(dat_long) <- "data.frame"
+ colnames(dat_long)[colnames(dat_long)=="value"] <- "FEV1"
+ dat_long$visit <- as.numeric(substr(dat_long$FEV1_GLI, 11, 11))
+
+ dat_long$time3 <- NA
+ dat_long[dat_long$visit==1,]$time3 <- 0
+ dat_long[dat_long$visit==3,]$time3 <- (dat_long[dat_long$visit==3,]$DATUM_V3 - dat_long[dat_long$visit==3,]$DATUM_V1) / 365.25
+ dat_long[dat_long$visit==4,]$time3 <- (dat_long[dat_long$visit==4,]$DATUM_V4 - dat_long[dat_long$visit==4,]$DATUM_V1) / 365.25
+ dat_long[dat_long$visit==5,]$time3 <- (dat_long[dat_long$visit==5,]$DATUM_V5 - dat_long[dat_long$visit==5,]$DATUM_V1) / 365.25
+ dat_long[dat_long$visit==6,]$time3 <- (dat_long[dat_long$visit==6,]$DATUM_V6 - dat_long[dat_long$visit==6,]$DATUM_V1) / 365.25
+
+ dat_long <- dat_long[complete.cases(dat_long$FEV1),]
+ dat_long <<- dat_long[,c("FEV1","time3","subject")] #beschränken auf relevante Variablen
+ lmer_random_slope <- lmer(FEV1 ~ time3 + (1+time3|subject)# + dropout_reason_name
+ , data=dat_long, control = lmerControl(optimizer ="Nelder_Mead"))
+ ann_declines <<- fixef(lmer_random_slope)[2] + ranef(lmer_random_slope)$subject[,2]
+ IDs <<- rownames(ranef(lmer_random_slope)$subject)
+ intercept <<- fixef(lmer_random_slope)[1]
+ FUN(fixef(lmer_random_slope)[2] + ranef(lmer_random_slope)$subject[,2])
+}
+
+#FEV1 in percent of predicted normal values
+#lufu_random_slopes_rtm2():
+summary(x <- psych::winsor(lufu_random_slopes_rtm2(data=cosy3_, FUN=print), trim=0.05)); sd(x) #Hier cosy3_, weil das die sind, die V2 hatten.
+ann_decline_winsor05_rtm2 <- x; summary(ann_decline_winsor05_rtm2)
+ann_decline_winsor05_DF <- data.frame(IDs, ann_decline_winsor05_rtm2)
+colnames(ann_decline_winsor05_DF)[1] <- "subject"
+cosy3_ <- cbind(cosy3_, ann_decline_winsor05_rtm2)
+
+#V1,3-7, V2 für GOLD-Klassif., 5% winsor. über alle FEV1-Messungen hinweg:
+tmp <- merge(ann_decline_winsor05_DF, cosy3_[,c("subject","GOLD_GLI_V2","TIFF_V2")], by="subject")
+summary(tmp$ann_decline_winsor05_rtm2); sd(tmp$ann_decline_winsor05_rtm2)
+# tapply(tmp$ann_decline_winsor05_rtm2, tmp$GOLD_GLI_V2, summary) ##Nicht so relevant, weil für alle TIFF-Werte und nicht nur für die mit TIFF<=0.7 oder >0.7.
+# tapply(tmp$ann_decline_winsor05_rtm2, tmp$GOLD_GLI_V2, sd)
+
+#Nur in denen mit Tiff.<=0.7:
+tmp2 <- tmp[!is.na(tmp$TIFF_V2) & tmp$TIFF_V2 <= 0.7,]
+summary(tmp2$ann_decline_winsor05_rtm2); sd(tmp2$ann_decline_winsor05_rtm2)
+#tapply(tmp2$ann_decline_winsor05_rtm2, tmp2$GOLD_GLI_V2, summary) #oder schöner:
+lapply(tapply(tmp2$ann_decline_winsor05_rtm2, tmp2$GOLD_GLI_V2, summary), round, 2)
+#tapply(tmp2$ann_decline_winsor05_rtm2, tmp2$GOLD_GLI_V2, sd) #oder schöner:
+lapply(tapply(tmp2$ann_decline_winsor05_rtm2, tmp2$GOLD_GLI_V2, sd), round, 2)
+
+#Nur in denen mit Tiff.>0.7:
+tmp3 <- tmp[!is.na(tmp$TIFF_V2) & tmp$TIFF_V2 > 0.7,]
+summary(tmp3$ann_decline_winsor05_rtm2); sd(tmp3$ann_decline_winsor05_rtm2)
+lapply(tapply(tmp3$ann_decline_winsor05_rtm2, tmp3$GOLD_GLI_V2, summary), round, 2)
+lapply(tapply(tmp3$ann_decline_winsor05_rtm2, tmp3$GOLD_GLI_V2, sd), round, 2)
+
+
+lufu_random_slopes_ml_rtm2 <- function(data, FUN=summary, mytrim=0){
+ dat_long <- tidyr::pivot_longer(data, cols=c("LUFU_FEV1_V1","LUFU_FEV1_V3","LUFU_FEV1_V4","LUFU_FEV1_V5","LUFU_FEV1_V6")) #Hier FEV1_GLI_V1 weggelassen, stattdessen ..._V2 gewählt.
+ class(dat_long) <- "data.frame"
+ colnames(dat_long)[colnames(dat_long)=="value"] <- "FEV1"
+ dat_long$visit <- as.numeric(substr(dat_long$name, 12, 12))
+
+ dat_long$time3 <- NA
+ dat_long[dat_long$visit==1,]$time3 <- 0
+ dat_long[dat_long$visit==3,]$time3 <- (dat_long[dat_long$visit==3,]$DATUM_V3 - dat_long[dat_long$visit==3,]$DATUM_V1) / 365.25
+ dat_long[dat_long$visit==4,]$time3 <- (dat_long[dat_long$visit==4,]$DATUM_V4 - dat_long[dat_long$visit==4,]$DATUM_V1) / 365.25
+ dat_long[dat_long$visit==5,]$time3 <- (dat_long[dat_long$visit==5,]$DATUM_V5 - dat_long[dat_long$visit==5,]$DATUM_V1) / 365.25
+ dat_long[dat_long$visit==6,]$time3 <- (dat_long[dat_long$visit==6,]$DATUM_V6 - dat_long[dat_long$visit==6,]$DATUM_V1) / 365.25
+
+ dat_long <- dat_long[complete.cases(dat_long$FEV1),]
+ dat_long <<- dat_long[,c("FEV1","time3","subject")] #beschränken auf relevante Variablen
+ lmer_random_slope <- lmer(FEV1 ~ time3 + (1+time3|subject)# + dropout_reason_name
+ , data=dat_long, control = lmerControl(optimizer ="Nelder_Mead"))
+ ann_declines <<- fixef(lmer_random_slope)[2] + ranef(lmer_random_slope)$subject[,2]
+ IDs <<- rownames(ranef(lmer_random_slope)$subject)
+ intercept <<- fixef(lmer_random_slope)[1]
+ FUN(psych::winsor(1000*(fixef(lmer_random_slope)[2] + ranef(lmer_random_slope)$subject[,2]), trim=mytrim))
+}
+
+#FEV1 in mL
+#lufu_random_slopes_ml_rtm2():
+summary(x <- psych::winsor(lufu_random_slopes_ml_rtm2(data=cosy3_, FUN=print), trim=0.05)); sd(x)
+ann_decline_ml_winsor05 <- x; summary(ann_decline_ml_winsor05)
+ann_decline_ml_winsor05_DF <- data.frame(IDs, ann_decline_ml_winsor05)
+colnames(ann_decline_ml_winsor05_DF)[1] <- "subject"
+
+#V1,3-7, V2 für GOLD-Klassif., 5% winsor. über alle FEV1-Messungen hinweg:
+tmp <- merge(ann_decline_ml_winsor05_DF, cosy3_[,c("subject","GOLD_GLI_V2","TIFF_V2")], by="subject")
+summary(tmp$ann_decline_ml_winsor05)
+lapply(tapply(tmp$ann_decline_ml_winsor05, tmp$GOLD_GLI_V2, summary), round, 1)
+lapply(tapply(tmp$ann_decline_ml_winsor05, tmp$GOLD_GLI_V2, sd), round, 1)
+
+#Nur in denen mit Tiff.<=0.7:
+tmp2 <- tmp[!is.na(tmp$TIFF_V2) & tmp$TIFF_V2 <= 0.7,]
+summary(tmp2$ann_decline_ml_winsor05); sd(tmp2$ann_decline_ml_winsor05)
+#tapply(tmp2$ann_decline_ml_winsor05, tmp2$GOLD_GLI_V2, summary) #oder schöner:
+lapply(tapply(tmp2$ann_decline_ml_winsor05, tmp2$GOLD_GLI_V2, summary), round, 2)
+#tapply(tmp2$ann_decline_ml_winsor05, tmp2$GOLD_GLI_V2, sd) #oder schöner:
+lapply(tapply(tmp2$ann_decline_ml_winsor05, tmp2$GOLD_GLI_V2, sd), round, 2)
+
+#Nur in denen mit Tiff.>0.7:
+tmp3 <- tmp[!is.na(tmp$TIFF_V2) & tmp$TIFF_V2 > 0.7,]
+summary(tmp3$ann_decline_ml_winsor05); sd(tmp3$ann_decline_ml_winsor05)
+lapply(tapply(tmp3$ann_decline_ml_winsor05, tmp3$GOLD_GLI_V2, summary), round, 2)
+lapply(tapply(tmp3$ann_decline_ml_winsor05, tmp3$GOLD_GLI_V2, sd), round, 2)
+
+
+
+
+#Ergänzung (22.9.25): Welche Leute sind vom Winsorizing betroffen? --> FEV1_V1, decline ohne + mit Winsor. in Tabelle packen.
+
+cosy3_[,c("subject","FEV1_GLI_V1","ann_decline", "ann_decline_winsor05_rtm")]
+winsorized_pat <- cosy3_$ann_decline - cosy3_$ann_decline_winsor05_rtm
+winsorized_pat_logic <- winsorized_pat != 0
+(winsor_affected <- cosy3_[winsorized_pat_logic,c("subject","FEV1_GLI_V1","ann_decline", "ann_decline_winsor05_rtm")])
+write.csv2(winsor_affected, "winsor_affected.csv")
+
+#Ergänzung (23.9.25): Kreuztabelle mit GOLD bei V1 vs. V2.
+
+write.csv2(table(cosy3_[,c("GOLD_GLI_V1", "GOLD_GLI_V2")], exclude=NULL), "Kreuztabelle_GOLD_V1_V3.csv")
+write.csv2(table(cosy1[,c("GOLD_GLI_V1", "GOLD_GLI_V2")], exclude=NULL), "Kreuztabelle_GOLD_V1_V3.csv")
+
+#-> zu Papier bringen + Rolf schicken! (Erledigt.)
+
+#Ergänzung 6.10.25:
+#- Die beiden untersten Zeilen von Table 2 nochmal checken (Lufu-Decline für V1 + V3-V6, GOLD gemäß V2, 5% winsorizing über alle hinweg, Tiff. >0.7, FEV1 (a) >=80, (b) >=50- <80)
+aggregate(ann_decline_winsor05_rtm ~ GOLD_GLI_V1 + TIFF_V2_dicho, data=cosy3_, FUN=mymean)
+aggregate(ann_decline_winsor05_rtm ~ GOLD_GLI_V1 + TIFF_V2_dicho, data=cosy3_, FUN=mysd)
+#-> Sehe keinen Fehler.
+
+#- Korrelation der Declines (%p und ml) checken (Scatterplots):
+plot(cosy3_$ann_decline_winsor05_rtm, cosy3_$ann_decline_ml_winsor05, xlab="Decline in %pred.", ylab="Decline in ml", main="Pairs of declines in %pred. and in ml\n5% winsorizing across all declines", pch=".", cex=2.5)
+rug(cosy3_$ann_decline_winsor05_rtm, side=1)
+rug(cosy3_$ann_decline_ml_winsor05, side=2)
+lines(lowess(cosy3_$ann_decline_winsor05_rtm, cosy3_$ann_decline_ml_winsor05, f = .7), lwd = 2, col = "red")
+grid()
+
+cor.test(cosy3_$ann_decline_winsor05_rtm, cosy3_$ann_decline_ml_winsor05)
+correlation <- round(cor.test(cosy3_$ann_decline_winsor05_rtm, cosy3_$ann_decline_ml_winsor05)$estimate, 2)
+text(-1.8, -20, "Correlation: ")
+text(-1.5, -20, correlation)
+
+x <- cosy3_$ann_decline_winsor05_rtm
+y <- cosy3_$ann_decline_ml_winsor05
+
+#Oder:
+smoothScatter(x, y, xlab = "FEV1 (ml)", ylab = "FEV1 (% of predicted)", main = "Gemeinsame Dichte (smoothScatter)")
+lines(lowess(x, y), lwd = 2)
+
+#Oder:
+plot(x, y,
+     pch = 16, cex = .7, col = densCols(x, y),
+     xlab = "FEV1 (ml)", ylab = "FEV1 (% of predicted)",
+     main = "Gemeinsame Verteilung (dichtegefärbt)")
+rug(x, side = 1, col = "#00000040"); rug(y, side = 2, col = "#00000040")
+lines(lowess(x, y, f = .7), lwd = 2, col = "red")
+grid()
+
+#Oder:
+# Bins festlegen
+xb <- seq(min(x), max(x), length.out = 31)
+yb <- seq(min(y), max(y), length.out = 31)
+cnt <- table(cut(x, xb, include.lowest = TRUE),
+             cut(y, yb, include.lowest = TRUE))
+# Mittelpunkte der Bins
+mid <- function(b) (head(b, -1) + tail(b, -1))/2
+xm <- mid(xb); ym <- mid(yb)
+
+# Heatmap
+op <- par(mar = c(4,4,2,5))
+image(xm, ym, t(cnt), useRaster = TRUE,
+      xlab = "FEV1 (ml)", ylab = "FEV1 (% of predicted)",
+      main = "2D-Histogramm (Counts)",
+      col = hcl.colors(80, "YlOrRd", rev = TRUE))
+# optional: Zählwerte-Konturen darüber
+contour(xm, ym, t(cnt), add = TRUE, drawlabels = FALSE, col = "#33333380")
+par(op)
+
+#Supplementary Table 5: Sollten NICHT für RTM adjustiert sein, d.h. überall V1 + V3-V6 verwenden.
+#in %pred.:
+table(cosy3_[,c("GOLD_GLI_V1","TIFF_V1_dicho")])
+aggregate(ann_decline_winsor05 ~ GOLD_GLI_V1 + TIFF_V1_dicho, data=cosy3_, FUN=mymean)
+aggregate(ann_decline_winsor05 ~ GOLD_GLI_V1 + TIFF_V1_dicho, data=cosy3_, FUN=mysd)
+mymean(cosy3_$ann_decline_winsor05)
+mysd(cosy3_$ann_decline_winsor05)
+
+mymean(cosy3_[cosy3_$TIFF_V1_dicho=="<=0.7",]$ann_decline_winsor05)
+mysd(cosy3_[cosy3_$TIFF_V1_dicho=="<=0.7",]$ann_decline_winsor05)
+mymean(cosy3_[cosy3_$TIFF_V1_dicho==">0.7",]$ann_decline_winsor05)
+mysd(cosy3_[cosy3_$TIFF_V1_dicho==">0.7",]$ann_decline_winsor05)
+
+#in ml:
+aggregate(ann_decline_ml_winsor05 ~ GOLD_GLI_V1 + TIFF_V1_dicho, data=cosy3_, FUN=mymean, n=1)
+aggregate(ann_decline_ml_winsor05 ~ GOLD_GLI_V1 + TIFF_V1_dicho, data=cosy3_, FUN=mysd, n=1)
+mymean(cosy3_$ann_decline_ml_winsor05, n=1)
+mysd(cosy3_$ann_decline_ml_winsor05, n=1)
+
+mymean(cosy3_[cosy3_$TIFF_V1_dicho=="<=0.7",]$ann_decline_ml_winsor05, n=1)
+mysd(cosy3_[cosy3_$TIFF_V1_dicho=="<=0.7",]$ann_decline_ml_winsor05, n=1)
+mymean(cosy3_[cosy3_$TIFF_V1_dicho==">0.7",]$ann_decline_ml_winsor05, n=1)
+mysd(cosy3_[cosy3_$TIFF_V1_dicho==">0.7",]$ann_decline_ml_winsor05, n=1)
